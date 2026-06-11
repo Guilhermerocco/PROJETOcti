@@ -888,7 +888,7 @@ DASHBOARD_HTML = """
 
     <script>
         // ── CHATBOT ──────────────────────────────────────────────
-        const WEBHOOK_URL = 'https://cti12dias.app.n8n.cloud/webhook/cti12dias';
+        const WEBHOOK_URL = 'https://cti12dias.app.n8n.cloud/webhook-test/cti12dias';
         const chatFab     = document.getElementById('chatbot-fab');
         const chatWindow  = document.getElementById('chatbot-window');
         const chatClose   = document.getElementById('chatbot-close');

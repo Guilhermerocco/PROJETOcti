@@ -1196,6 +1196,39 @@ def get_recomendacoes():
                 raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse(content=[])
 
+@app.get("/api/cliente/{codcli}")
+def get_cliente(codcli: int):
+    for _p in [
+        os.path.join("output", "recomendacoes.json"),
+        os.path.join("data", "raw", "recomendacoes.json"),
+        "recomendacoes.json",
+    ]:
+        if os.path.exists(_p):
+            with open(_p, "r", encoding="utf-8", errors="replace") as f:
+                dados = _json.load(f)
+            recs = dados.get("recomendacoes", dados) if isinstance(dados, dict) else dados
+            
+            # Filtra só esse cliente
+            cliente = [r for r in recs if r.get("codcli") == codcli]
+            if not cliente:
+                raise HTTPException(status_code=404, detail="Cliente não encontrado")
+            
+            # Agrupa: pega o melhor serviço e todos os atuais
+            melhor = max(cliente, key=lambda x: x.get("score", 0))
+            return {
+                "codcli": codcli,
+                "segmento": melhor.get("segmento"),
+                "nivel_cliente": melhor.get("nivel_cliente"),
+                "servicos_atuais": melhor.get("servicos_atuais", []),
+                "recomendacao_principal": melhor.get("servico_recomendado"),
+                "score": melhor.get("score"),
+                "outras_recomendacoes": [
+                    {"servico": r["servico_recomendado"], "score": r["score"]}
+                    for r in sorted(cliente, key=lambda x: -x.get("score", 0))[1:5]
+                    if r.get("score", 0) > 0
+                ]
+            }
+    raise HTTPException(status_code=500, detail="Arquivo não encontrado")
 @app.post("/api/kanban/save")
 def save_kanban(data: KanbanUpdate):
     global KANBAN_STATE
@@ -1205,3 +1238,4 @@ def save_kanban(data: KanbanUpdate):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+    

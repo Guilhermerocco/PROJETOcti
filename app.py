@@ -225,8 +225,14 @@ DASHBOARD_HTML = """
                                 <option value="B">Nivel B</option>
                                 <option value="C">Nivel C</option>
                             </select>
-                            <select id="rec-seg" onchange="recFiltrar()" class="flex-1 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 bg-slate-50 dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500">
+                            <select id="rec-seg" onchange="recFiltrar()" class="w-full mr-2 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 bg-slate-50 dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500">
                                 <option value="">Todos segmentos</option>
+                            </select>
+                        </div>
+                        <div>
+                            <select id="rec-consultor" onchange="recFiltrar()" class="w-full border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 bg-slate-50 dark:bg-slate-900 text-xs text-slate-600 dark:text-slate-400 focus:outline-none focus:border-blue-500">
+                                <option value="">Todos os consultores</option>
+                                {{CONSULTOR_OPTIONS}}
                             </select>
                         </div>
                     </div>
@@ -365,8 +371,8 @@ DASHBOARD_HTML = """
         <main id="tab-content-churn" class="hidden flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
             
             <div class="border-b border-slate-200 dark:border-slate-900 pb-6 mb-6">
-                <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Analise de Risco de Churn</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Score calculado por nivel do cliente, portfolio de servicos e oportunidades nao aproveitadas.</p>
+                <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Análise de Risco de Churn</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Score calculado por nível do cliente, portfólio de serviços e oportunidades não aproveitadas.</p>
             </div>
 
             <!-- LINHA 1: TOP 5 CARDS (HORIZONTAL) -->
@@ -377,22 +383,11 @@ DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- LINHA 2: GRAFICO BARRAS (ESQUERDA) + GRAFICO ROSCA (DIREITA) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                
-                <!-- Grafico de Barras Horizontal -->
-                <div class="bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                    <h3 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3">Score Medio por Segmento</h3>
-                    <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3">Top 10 segmentos com maior risco medio</p>
-                    <div id="churn-bar-chart" style="height: 360px;"></div>
-                </div>
-
-                <!-- Grafico de Rosca -->
-                <div class="bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                    <h3 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3">Top Oportunidades por Servico</h3>
-                    <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3">Servicos mais recomendados na base de clientes</p>
-                    <div id="churn-donut-chart" style="height: 280px;"></div>
-                </div>
+            <!-- LINHA 2: GRAFICO STACKED BAR GRANDE -->
+            <div class="bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-8">
+                <h3 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Portfolio de Servicos por Segmento</h3>
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3">Top 10 servicos × 5 segmentos com maior volume de servicos contratados</p>
+                <div id="churn-stacked-chart" style="height: 440px;"></div>
             </div>
 
         </main>
@@ -407,8 +402,7 @@ DASHBOARD_HTML = """
                 localStorage.theme = 'light';
             }
             if (churnLoaded) {
-                renderBarChart();
-                renderDonutChart();
+                renderStackedBarChart();
             }
         }
 
@@ -459,10 +453,33 @@ DASHBOARD_HTML = """
                 .catch(function(e){ console.error('Erro ao carregar recomendacoes:', e); });
         }
 
+        var recConsultorAtivo = '';
         function recFiltrar() {
             var q = (document.getElementById('rec-search').value||'').toLowerCase();
             var nivel = document.getElementById('rec-nivel').value;
             var seg = document.getElementById('rec-seg').value;
+            var consultor = document.getElementById('rec-consultor').value;
+
+            // Se o consultor mudou, recarrega dados da API com o novo consultor
+            if (consultor !== recConsultorAtivo) {
+                recConsultorAtivo = consultor;
+                var url = consultor ? '/api/recomendacoes?consultor=' + encodeURIComponent(consultor) : '/api/recomendacoes';
+                fetch(url)
+                    .then(function(r){ return r.json(); })
+                    .then(function(dados){
+                        recTodos = dados;
+                        recFiltrados = dados.filter(function(r){
+                            var mq = !q || String(r.codcli).includes(q) || r.servico_recomendado.toLowerCase().includes(q) || r.segmento.toLowerCase().includes(q);
+                            var mn = !nivel || r.nivel_cliente === nivel;
+                            var ms = !seg || r.segmento === seg;
+                            return mq && mn && ms;
+                        });
+                        recPagAtual = 1;
+                        recRenderLista();
+                    });
+                return;
+            }
+
             recFiltrados = recTodos.filter(function(r){
                 var mq = !q || String(r.codcli).includes(q) || r.servico_recomendado.toLowerCase().includes(q) || r.segmento.toLowerCase().includes(q);
                 var mn = !nivel || r.nivel_cliente === nivel;
@@ -500,7 +517,7 @@ DASHBOARD_HTML = """
                 // CORREÇÃO: usar uma função separada em vez de inline onclick
                 var id = r.codcli;
                 
-                return '<div data-codcli="' + id + '" class="rec-item px-4 py-3 cursor-pointer transition ' + activeCls + '">'
+                return '<div data-codcli="' + id + '" data-servico="' + r.servico_recomendado + '" class="rec-item px-4 py-3 cursor-pointer transition ' + activeCls + '">'
                     + '<div class="flex justify-between items-center">'
                     + '<span class="text-sm font-bold text-slate-800 dark:text-white">Cliente #' + r.codcli + '</span>'
                     + '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ' + nc + '">Nivel ' + r.nivel_cliente + '</span>'
@@ -513,7 +530,9 @@ DASHBOARD_HTML = """
             document.querySelectorAll('.rec-item').forEach(function(item) {
                 item.addEventListener('click', function() {
                     var codcli = parseInt(this.dataset.codcli);
-                    var cliente = recTodos.find(function(r) { return r.codcli === codcli; });
+                    var servico = this.dataset.servico;
+                    var cliente = recTodos.find(function(r) { return r.codcli === codcli && r.servico_recomendado === servico; });
+                    if (!cliente) cliente = recTodos.find(function(r) { return r.codcli === codcli; });
                     if (cliente) recSelecionar(cliente);
                 });
             });
@@ -557,6 +576,11 @@ DASHBOARD_HTML = """
             var justs = r.justificativas || [];
             var lista = todas ? justs : justs.slice(0, 3);
             var total = justs.length;
+            // DEBUG: inspecionar os dados que chegam
+            if (lista.length > 0) {
+                console.log('[DEBUG] justificativa[0]:', JSON.stringify(lista[0]));
+                console.log('[DEBUG] percentual_base:', lista[0].percentual_base, typeof lista[0].percentual_base);
+            }
             document.getElementById('rec-just-btn').textContent = todas ? 'Ver menos' : 'Ver todas';
             document.getElementById('rec-just-titulo').textContent = todas
                 ? 'Justificativas (todas as ' + total + ')'
@@ -565,6 +589,14 @@ DASHBOARD_HTML = """
                 var origens = j.tipo_regra === 'dupla'
                     ? '<strong>' + (j.origem||'') + '</strong>'
                     : '<strong>' + (j.origem_1||'') + '</strong> e <strong>' + (j.origem_2||'') + '</strong>';
+                var pb = (j.percentual_base != null) ? parseFloat(j.percentual_base) : NaN;
+                if (isNaN(pb) || pb <= 0) {
+                    // Calcular media da carteira: percentual_relacao / lift
+                    var lift = parseFloat(j.lift);
+                    var rel = parseFloat(j.percentual_relacao);
+                    pb = (lift > 0 && !isNaN(rel)) ? rel / lift : NaN;
+                }
+                var pbTexto = (!isNaN(pb) && pb > 0) ? pb.toFixed(2) + '%' : 'N/A';
                 return '<div class="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-xl">'
                     + '<p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">'
                     + j.percentual_relacao.toFixed(1) + '% dos clientes que possuem ' + origens
@@ -573,7 +605,7 @@ DASHBOARD_HTML = """
                     + '<div class="flex gap-2 mt-2 flex-wrap">'
                     + '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">&#x1F4C8; Lift: ' + j.lift.toFixed(2) + '</span>'
                     + '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-100 dark:border-violet-500/20">&#x1F517; Relacao: ' + j.percentual_relacao.toFixed(2) + '%</span>'
-                    + '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20">&#x1F4CA; Media da carteira: ' + (j.percentual_base||0).toFixed(2) + '%</span>'
+                    + '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20">&#x1F4CA; Media da carteira: ' + pbTexto + '</span>'
                     + '</div></div>';
             }).join('');
         }
@@ -623,6 +655,7 @@ DASHBOARD_HTML = """
         let churnLoaded = false;
         let churnSegmentos = [];
         let churnServicosPorSegmento = {};
+        let churnServicosContagemPorSegmento = {};
         let churnServicoRecPorSegmento = {};
         let churnDataGlobal = null;
 
@@ -637,12 +670,12 @@ DASHBOARD_HTML = """
                 if (data && data.segmentos) {
                     churnSegmentos = data.segmentos;
                     churnServicosPorSegmento = data.servicos_por_segmento || {};
+                    churnServicosContagemPorSegmento = data.servicos_contagem_por_segmento || {};
                     churnServicoRecPorSegmento = data.servico_rec_por_segmento || {};
                     churnDataGlobal = data;
                     
                     renderTop5Cards();
-                    renderBarChart();
-                    renderDonutChart();
+                    renderStackedBarChart();
                 } else {
                     showChurnFallback();
                 }
@@ -737,87 +770,86 @@ DASHBOARD_HTML = """
             }).join('');
         }
 
-        function renderBarChart() {
-            // Inverter: maior risco em cima no gráfico horizontal (Plotly inverte eixo Y)
-            const top10 = [...churnSegmentos].sort((a,b) => a.taxa_churn - b.taxa_churn).slice(-10);
+        function renderStackedBarChart() {
             const isDark = document.documentElement.classList.contains('dark');
             const gridColor = isDark ? '#1e293b' : '#e2e8f0';
             const textColor = isDark ? '#94a3b8' : '#64748b';
-            
-            const barColors = top10.map(s => s.taxa_churn >= 60 ? '#ef4444' : (s.taxa_churn >= 35 ? '#f59e0b' : '#10b981'));
-            
-            const data = [{
-                type: 'bar',
-                orientation: 'h',
-                x: top10.map(s => s.taxa_churn),
-                y: top10.map(s => s.segmento.length > 28 ? s.segmento.substring(0,25) + '...' : s.segmento),
-                text: top10.map(s => s.taxa_churn + '%'),
-                textposition: 'outside',
-                marker: { color: barColors, line: { width: 0 } },
-                hovertemplate: '<b>%{y}</b><br>Taxa de Churn: %{x}%<br>Clientes Nivel C: %{customdata}<extra></extra>',
-                customdata: top10.map(s => s.nivel_c + ' de ' + s.total)
-            }];
-            
+
+            // --- 1. Top 5 segmentos com mais servicos (soma de contagens) ---
+            const contagemTotal = {};
+            Object.entries(churnServicosContagemPorSegmento).forEach(([seg, counts]) => {
+                contagemTotal[seg] = Object.values(counts).reduce((a, b) => a + b, 0);
+            });
+            const top5segs = Object.entries(contagemTotal)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(e => e[0]);
+
+            // --- 2. Top 10 servicos globais (soma entre os 5 segmentos) ---
+            const servicoGlobal = {};
+            top5segs.forEach(seg => {
+                const counts = churnServicosContagemPorSegmento[seg] || {};
+                Object.entries(counts).forEach(([srv, cnt]) => {
+                    servicoGlobal[srv] = (servicoGlobal[srv] || 0) + cnt;
+                });
+            });
+            const top10srvs = Object.entries(servicoGlobal)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(e => e[0]);
+
+            // Invertido para que o maior fique no topo (Plotly inverte eixo Y em bar horizontal)
+            const yLabels = [...top10srvs].reverse();
+
+            // --- 3. Paleta de cores para os 5 segmentos ---
+            const cores = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
+
+            // --- 4. Montar traces (uma por segmento) ---
+            const traces = top5segs.map((seg, idx) => {
+                const counts = churnServicosContagemPorSegmento[seg] || {};
+                const xVals = yLabels.map(srv => counts[srv] || 0);
+                const segLabel = seg.length > 22 ? seg.substring(0, 20) + '..' : seg;
+                return {
+                    type: 'bar',
+                    orientation: 'h',
+                    name: segLabel,
+                    x: xVals,
+                    y: yLabels,
+                    marker: { color: cores[idx], opacity: 0.88 },
+                    hovertemplate: '<b>%{y}</b><br>' + seg + ': %{x} clientes<extra></extra>'
+                };
+            });
+
             const layout = {
+                barmode: 'stack',
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 font: { color: textColor, family: 'Inter', size: 10 },
-                margin: { l: 145, r: 45, t: 10, b: 20 },
-                xaxis: { 
-                    showgrid: true, 
-                    gridcolor: gridColor, 
-                    title: { text: 'Clientes Nivel C (%)', font: { size: 9 } },
-                    range: [0, 105]
+                margin: { l: 180, r: 30, t: 10, b: 50 },
+                xaxis: {
+                    showgrid: true,
+                    gridcolor: gridColor,
+                    title: { text: 'Numero de Clientes', font: { size: 10 } },
+                    zeroline: false
                 },
-                yaxis: { showgrid: false, title: '' },
-                height: 340
-            };
-            
-            Plotly.newPlot('churn-bar-chart', data, layout, { displayModeBar: false, responsive: true });
-        }
-
-        function renderDonutChart() {
-            if (!churnDataGlobal || !churnServicoRecPorSegmento) return;
-            const isDark = document.documentElement.classList.contains('dark');
-
-            // Contar quantas vezes cada servico aparece como recomendado
-            const contagem = {};
-            Object.values(churnServicoRecPorSegmento).forEach(function(sv) {
-                contagem[sv] = (contagem[sv] || 0) + 1;
-            });
-
-            // Ordenar e pegar top 8
-            const sorted = Object.entries(contagem).sort((a,b) => b[1]-a[1]).slice(0, 8);
-            const labels = sorted.map(e => e[0].length > 30 ? e[0].substring(0,28)+'..' : e[0]);
-            const values = sorted.map(e => e[1]);
-
-            const cores = ['#3b82f6','#8b5cf6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#64748b'];
-
-            const plotData = [{
-                type: 'pie',
-                hole: 0.58,
-                labels: labels,
-                values: values,
-                marker: {
-                    colors: cores,
-                    line: { color: isDark ? '#0f172a' : '#f8fafc', width: 2 }
+                yaxis: {
+                    showgrid: false,
+                    automargin: true,
+                    tickfont: { size: 10 }
                 },
-                textinfo: 'percent',
-                textposition: 'inside',
-                insidetextorientation: 'radial',
-                hovertemplate: '<b>%{label}</b><br>Recomendado em %{value} segmento(s)<br>%{percent}<extra></extra>'
-            }];
-
-            const layout = {
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                font: { color: isDark ? '#94a3b8' : '#64748b', family: 'Inter', size: 10 },
-                margin: { l: 10, r: 10, t: 10, b: 80 },
-                showlegend: true,
-                legend: { orientation: 'h', yanchor: 'top', y: -0.18, xanchor: 'center', x: 0.5, font: { size: 9 }, tracegroupgap: 6 }
+                legend: {
+                    orientation: 'h',
+                    yanchor: 'bottom',
+                    y: -0.22,
+                    xanchor: 'center',
+                    x: 0.5,
+                    font: { size: 9 },
+                    bgcolor: 'rgba(0,0,0,0)'
+                },
+                height: 420
             };
 
-            Plotly.newPlot('churn-donut-chart', plotData, layout, { displayModeBar: false, responsive: true });
+            Plotly.newPlot('churn-stacked-chart', traces, layout, { displayModeBar: false, responsive: true });
         }
 
         function showChurnFallback() {
@@ -992,35 +1024,80 @@ def login(username: str = Form(...), password: str = Form(...)):
         erro_msg = "<div class='bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 p-3 rounded-xl mb-5 text-center text-xs font-semibold shadow-sm'>As credenciais informadas nao coincidem.</div>"
         return LOGIN_HTML.replace("", erro_msg)
     
-    # --- CARREGAR OPORTUNIDADES ---
-    caminhos_oportunidades = [
-        os.path.join("output", "oportunidades.xlsx"),
-        "oportunidades.xlsx",
-    ]
-    
-    df = None
-    for p in caminhos_oportunidades:
-        if os.path.exists(p):
-            df = pd.read_excel(p)
+    # --- CARREGAR OPORTUNIDADES DO RECOMENDACOES.JSON (mesma fonte do Painel Comercial) ---
+    from collections import defaultdict as _defaultdict
+
+    _rec_rows = []
+    for _p in [
+        os.path.join("output", "recomendacoes.json"),
+        os.path.join("data", "raw", "recomendacoes.json"),
+        "recomendacoes.json",
+    ]:
+        if os.path.exists(_p):
+            try:
+                with open(_p, "r", encoding="utf-8", errors="replace") as _f:
+                    _rec_data = _json.load(_f)
+                _all_recs = _rec_data.get("recomendacoes", _rec_data) if isinstance(_rec_data, dict) else _rec_data
+
+                _all_recs.sort(
+                    key=lambda x: float(x.get("score", 0) or 0),
+                    reverse=True
+                )
+
+                # Mantém somente as 1000 melhores oportunidades
+                _all_recs = _all_recs[:1000]
+
+                # Agrupa por codcli, pega melhor recomendacao (maior score)
+                _por_cliente = _defaultdict(list)
+                for _r in _all_recs:
+                    _cid = _r.get("codcli")
+                    if _cid:
+                        _por_cliente[_cid].append(_r)
+
+                for _cid, _lista in _por_cliente.items():
+                    _melhor = max(_lista, key=lambda x: x.get("score", 0))
+                    _score = _melhor.get("score", 0)
+                    # Define nivel de prioridade baseado no score e nivel_cliente
+                    _nivel = _melhor.get("nivel_cliente", "B")
+                    if _score >= 900 or _nivel == "A":
+                        _prio = "ALTA"
+                    elif _score >= 500 or _nivel == "B":
+                        _prio = "MEDIA"
+                    else:
+                        _prio = "BAIXA"
+
+                    _rec_rows.append({
+                        "codcli": str(_cid),
+                        "segmento": _melhor.get("segmento", "Nao Informado"),
+                        "servico_sugerido": _melhor.get("servico_recomendado", ""),
+                        "servicos_atuais": ", ".join(_melhor.get("servicos_atuais", [])),
+                        "nivel_cliente": _nivel,
+                        "score": _score,
+                        "prioridade_comercial": _prio,
+                    })
+            except Exception as _e:
+                print(f"Erro ao carregar recomendacoes para kanban: {_e}")
             break
-    
-    if df is None or df.empty:
-        df = pd.DataFrame({'codcli': [], 'segmento': [], 'categoria_problema': [], 'qtd_tickets': [], 'servico_sugerido': [], 'prioridade_comercial': []})
-    
+
+    df = pd.DataFrame(_rec_rows) if _rec_rows else pd.DataFrame({
+        'codcli': [], 'segmento': [], 'servico_sugerido': [],
+        'servicos_atuais': [], 'nivel_cliente': [], 'score': [], 'prioridade_comercial': []
+    })
+
     kpi_total = str(len(df))
     kpi_alta = str(len(df[df['prioridade_comercial'] == 'ALTA'])) if 'prioridade_comercial' in df.columns else "0"
-    kpi_tickets = str(df['qtd_tickets'].sum()) if 'qtd_tickets' in df.columns else "0"
+    kpi_tickets = "0"
     kpi_top = str(df['servico_sugerido'].mode()[0]) if not df.empty and 'servico_sugerido' in df.columns else "N/A"
-    
+
     # --- GRAFICOS ---
-    if not df.empty and 'categoria_problema' in df.columns:
-        fig_cat = px.bar(df['categoria_problema'].value_counts().reset_index(), x='categoria_problema', y='count')
+    if not df.empty and 'segmento' in df.columns:
+        fig_cat = px.bar(df['segmento'].value_counts().reset_index(), x='segmento', y='count')
         fig_cat.update_traces(marker_color='#2563eb')
         fig_cat.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='#94a3b8', margin=dict(l=0, r=0, t=10, b=0), height=240)
         html_g1 = pio.to_html(fig_cat, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     else:
         html_g1 = "<p class='text-center text-slate-400'>Dados nao disponiveis</p>"
-    
+
     if not df.empty and 'prioridade_comercial' in df.columns:
         fig_prio = px.pie(df, names='prioridade_comercial', hole=0.7, color='prioridade_comercial', color_discrete_map={'ALTA':'#f43f5e', 'MEDIA':'#3b82f6', 'BAIXA':'#64748b'})
         fig_prio.update_traces(textinfo='none')
@@ -1028,47 +1105,48 @@ def login(username: str = Form(...), password: str = Form(...)):
         html_g2 = pio.to_html(fig_prio, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     else:
         html_g2 = "<p class='text-center text-slate-400'>Dados nao disponiveis</p>"
-    
+
     # --- KANBAN ---
     for _, row in df.iterrows():
         cid = str(row.get('codcli', ''))
         if cid and cid not in KANBAN_STATE:
             KANBAN_STATE[cid] = "afazer"
-    
+
     table_rows = ""
     kanban_buffers = {"afazer": "", "aguardando": "", "recusado": "", "aceito": ""}
-    
+
     for _, row in df.iterrows():
         cid = str(row.get('codcli', ''))
         segmento = str(row.get('segmento', 'Nao Informado'))
-        categoria = str(row.get('categoria_problema', ''))
         solucao = str(row.get('servico_sugerido', ''))
         prioridade = str(row.get('prioridade_comercial', 'MEDIA'))
-        tickets = str(row.get('qtd_tickets', '0'))
-        
-        servico_atual = str(row.get('servicos_contratados', 'Nenhum'))
-        script_texto = str(row.get('script_vendas', f"Ola, identificamos chamados sobre {categoria} e sugerimos a solucao {solucao}.")).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        
+        nivel = str(row.get('nivel_cliente', ''))
+        score = str(row.get('score', ''))
+        servicos_atuais = str(row.get('servicos_atuais', ''))
+
+        script_texto = f"Cliente #{cid} ({segmento}, Nivel {nivel}): recomendamos oferecer {solucao}. Servicos atuais: {servicos_atuais}."
+        script_texto = script_texto.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
         cor_prio = "text-rose-500" if prioridade == "ALTA" else ("text-blue-500" if prioridade == "MEDIA" else "text-slate-500")
-        
+
         table_rows += f"""
-        <tr data-id="{cid}" data-segmento="{segmento}" data-priority="{prioridade}" data-cat="{categoria}" data-sug="{solucao}" data-servico="{servico_atual}" onclick="loadLeadScript(this)" class="hover:bg-slate-100 dark:hover:bg-slate-900/40 cursor-pointer border-b border-slate-200 dark:border-slate-900/60">
+        <tr data-id="{cid}" data-segmento="{segmento}" data-priority="{prioridade}" data-cat="{segmento}" data-sug="{solucao}" data-servico="{servicos_atuais}" onclick="loadLeadScript(this)" class="hover:bg-slate-100 dark:hover:bg-slate-900/40 cursor-pointer border-b border-slate-200 dark:border-slate-900/60">
             <td class="px-5 py-3 font-semibold">#{cid}</td>
             <td class="px-5 py-3">{segmento}</td>
-            <td class="px-5 py-3 text-amber-600">{servico_atual}</td>
-            <td class="px-5 py-3 text-blue-600">{categoria}</td>
+            <td class="px-5 py-3 text-amber-600">{nivel}</td>
+            <td class="px-5 py-3 text-blue-600">{servicos_atuais[:60]}...</td>
             <td class="px-5 py-3 text-emerald-600">{solucao}</td>
             <td class="px-5 py-3 text-right font-bold {cor_prio}">{prioridade}
                 <div class="hidden hidden-script-source">{script_texto}</div>
             </td>
           </table>
         """
-        
+
         status_atual = KANBAN_STATE.get(cid, "afazer")
         card_html = f"""
         <div data-id="{cid}" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 rounded-xl space-y-1 cursor-grab shadow-sm">
-            <div class="flex justify-between"><span class="text-[11px] font-bold">#{cid}</span><span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-100">{tickets} Tickets</span></div>
-            <p class="text-[11px] truncate">{segmento}</p>
+            <div class="flex justify-between"><span class="text-[11px] font-bold">#{cid}</span><span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-100">Score {score}</span></div>
+            <p class="text-[11px] truncate">{segmento} &middot; N&#237;vel {nivel}</p>
             <div class="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded truncate">{solucao}</div>
         </div>
         """
@@ -1120,12 +1198,15 @@ def login(username: str = Form(...), password: str = Form(...)):
             analise = analise[analise["total"] > 0]
             
             servicos_por_segmento = {}
+            servicos_contagem_por_segmento = {}
             servico_rec_por_segmento = {}
-            if 'servico' in df_clientes.columns:
+            if 'servico' in df_clientes.columns:    
                 df_srvs = df_clientes.dropna(subset=['segmento'])
                 for seg in df_srvs['segmento'].unique():
-                    servicos = df_srvs[df_srvs['segmento'] == seg]['servico'].dropna().value_counts().head(8).index.tolist()
+                    vc = df_srvs[df_srvs['segmento'] == seg]['servico'].dropna().value_counts()
+                    servicos = vc.head(8).index.tolist()
                     servicos_por_segmento[str(seg)] = servicos if servicos else ['Acesso Dedicado - Fisico']
+                    servicos_contagem_por_segmento[str(seg)] = {str(k): int(v) for k, v in vc.items()}
             # Top servico recomendado por segmento (via recomendacoes.json)
             for _p in [os.path.join("output","recomendacoes.json"), os.path.join("data","raw","recomendacoes.json"), "recomendacoes.json"]:
                 if os.path.exists(_p):
@@ -1156,6 +1237,7 @@ def login(username: str = Form(...), password: str = Form(...)):
             churn_json_str = _json.dumps({
                 "segmentos": churn_list,
                 "servicos_por_segmento": servicos_por_segmento,
+                "servicos_contagem_por_segmento": servicos_contagem_por_segmento,
                 "servico_rec_por_segmento": servico_rec_por_segmento,
                 "taxa_global": round(float(clientes_c.sum() / total_seg.sum() * 100), 1),
                 "total_clientes": int(total_seg.sum()),
@@ -1166,6 +1248,32 @@ def login(username: str = Form(...), password: str = Form(...)):
         except Exception as e:
             print(f"Erro churn: {e}")
     
+    # Gerar options de consultor a partir do JSON
+    consultor_options = ''
+    for _p in [
+        'recomendacoes.json',
+        os.path.join('output', 'recomendacoes.json'),
+        os.path.join('data', 'raw', 'recomendacoes.json'),
+    ]:
+        if os.path.exists(_p):
+            print(f'[CONSULTOR] Usando arquivo: {_p}')
+            try:
+                with open(_p, 'r', encoding='utf-8', errors='replace') as _f:
+                    _rec = _json.load(_f)
+                _recs = _rec.get('recomendacoes', _rec) if isinstance(_rec, dict) else _rec
+                _consultores = sorted(set(
+                    (r.get('consultor') or '').strip()
+                    for r in _recs
+                    if r.get('consultor')
+                ), key=lambda x: x.lower())
+                consultor_options = ''.join(
+                    f'<option value="{c}">{c}</option>' for c in _consultores
+                )
+                print(f'[CONSULTOR] {len(_consultores)} consultores gerados: {_consultores}')
+            except Exception as e:
+                print(f'Erro ao gerar consultor_options: {e}')
+            break
+
     html = DASHBOARD_HTML.replace("{{CHURN_DATA}}", churn_json_str)
     html = html.replace("{{KPI_TOTAL}}", kpi_total).replace("{{KPI_ALTA}}", kpi_alta)
     html = html.replace("{{KPI_TICKETS}}", kpi_tickets).replace("{{KPI_TOP}}", kpi_top)
@@ -1175,67 +1283,80 @@ def login(username: str = Form(...), password: str = Form(...)):
     html = html.replace("{{KANBAN_AGUARDANDO}}", kanban_buffers["aguardando"])
     html = html.replace("{{KANBAN_RECUSADO}}", kanban_buffers["recusado"])
     html = html.replace("{{KANBAN_ACEITO}}", kanban_buffers["aceito"])
+    html = html.replace("{{CONSULTOR_OPTIONS}}", consultor_options)
     
     return HTMLResponse(content=html)
 
 @app.get("/api/recomendacoes")
-def get_recomendacoes():
+def get_recomendacoes(consultor: str = ""):
     for _p in [
+        "recomendacoes.json",
         os.path.join("output", "recomendacoes.json"),
         os.path.join("data", "raw", "recomendacoes.json"),
-        "recomendacoes.json",
     ]:
         if os.path.exists(_p):
             try:
                 with open(_p, "r", encoding="utf-8", errors="replace") as _f:
                     _rec = _json.load(_f)
-                _recs = _rec.get("recomendacoes", _rec) if isinstance(_rec, dict) else _rec
-                _recs = [r for r in _recs if r.get("score", 0) > 800]
+
+                _recs = (
+                    _rec.get("recomendacoes", _rec)
+                    if isinstance(_rec, dict)
+                    else _rec
+                )
+
+                # Ordena por score (maior para menor)
+                _recs.sort(
+                    key=lambda x: float(x.get("score", 0) or 0),
+                    reverse=True
+                )
+
+                # Mantém apenas as 1000 melhores oportunidades
+                _recs = _recs[:1000]
+
+                # Filtra por consultor dentro das top 1000
+                if consultor:
+                    _recs = [
+                        r for r in _recs
+                        if (r.get("consultor") or "").strip().lower()
+                        == consultor.strip().lower()
+                    ]
+
                 return JSONResponse(content=_recs)
+
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
     return JSONResponse(content=[])
 
-@app.get("/api/cliente/{codcli}")
-def get_cliente(codcli: int):
-    for _p in [
-        os.path.join("output", "recomendacoes.json"),
-        os.path.join("data", "raw", "recomendacoes.json"),
-        "recomendacoes.json",
-    ]:
-        if os.path.exists(_p):
-            with open(_p, "r", encoding="utf-8", errors="replace") as f:
-                dados = _json.load(f)
-            recs = dados.get("recomendacoes", dados) if isinstance(dados, dict) else dados
-            
-            # Filtra só esse cliente
-            cliente = [r for r in recs if r.get("codcli") == codcli]
-            if not cliente:
-                raise HTTPException(status_code=404, detail="Cliente não encontrado")
-            
-            # Agrupa: pega o melhor serviço e todos os atuais
-            melhor = max(cliente, key=lambda x: x.get("score", 0))
-            return {
-                "codcli": codcli,
-                "segmento": melhor.get("segmento"),
-                "nivel_cliente": melhor.get("nivel_cliente"),
-                "servicos_atuais": melhor.get("servicos_atuais", []),
-                "recomendacao_principal": melhor.get("servico_recomendado"),
-                "score": melhor.get("score"),
-                "outras_recomendacoes": [
-                    {"servico": r["servico_recomendado"], "score": r["score"]}
-                    for r in sorted(cliente, key=lambda x: -x.get("score", 0))[1:5]
-                    if r.get("score", 0) > 0
-                ]
-            }
-    raise HTTPException(status_code=500, detail="Arquivo não encontrado")
+
 @app.post("/api/kanban/save")
 def save_kanban(data: KanbanUpdate):
     global KANBAN_STATE
+
     KANBAN_STATE[data.codcli] = data.nova_coluna
-    return {"status": "success"}
+
+    return {
+        "status": "success",
+        "codcli": data.codcli,
+        "nova_coluna": data.nova_coluna
+    }
+
+
+@app.get("/api/kanban/state")
+def get_kanban_state():
+    return JSONResponse(content=KANBAN_STATE)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000
+    )
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    

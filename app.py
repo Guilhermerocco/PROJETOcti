@@ -888,7 +888,7 @@ DASHBOARD_HTML = """
 
     <script>
         // ── CHATBOT ──────────────────────────────────────────────
-        const WEBHOOK_URL = 'https://mesafacul.app.n8n.cloud/webhook/cti12dias';
+        const WEBHOOK_URL = 'https://cti12dias.app.n8n.cloud/webhook-test/cti12dias';
         const chatFab     = document.getElementById('chatbot-fab');
         const chatWindow  = document.getElementById('chatbot-window');
         const chatClose   = document.getElementById('chatbot-close');
@@ -992,35 +992,72 @@ def login(username: str = Form(...), password: str = Form(...)):
         erro_msg = "<div class='bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 p-3 rounded-xl mb-5 text-center text-xs font-semibold shadow-sm'>As credenciais informadas nao coincidem.</div>"
         return LOGIN_HTML.replace("", erro_msg)
     
-    # --- CARREGAR OPORTUNIDADES ---
-    caminhos_oportunidades = [
-        os.path.join("output", "oportunidades.xlsx"),
-        "oportunidades.xlsx",
-    ]
-    
-    df = None
-    for p in caminhos_oportunidades:
-        if os.path.exists(p):
-            df = pd.read_excel(p)
+    # --- CARREGAR OPORTUNIDADES DO RECOMENDACOES.JSON (mesma fonte do Painel Comercial) ---
+    from collections import defaultdict as _defaultdict
+
+    _rec_rows = []
+    for _p in [
+        os.path.join("output", "recomendacoes.json"),
+        os.path.join("data", "raw", "recomendacoes.json"),
+        "recomendacoes.json",
+    ]:
+        if os.path.exists(_p):
+            try:
+                with open(_p, "r", encoding="utf-8", errors="replace") as _f:
+                    _rec_data = _json.load(_f)
+                _all_recs = _rec_data.get("recomendacoes", _rec_data) if isinstance(_rec_data, dict) else _rec_data
+
+                # Agrupa por codcli, pega melhor recomendacao (maior score)
+                _por_cliente = _defaultdict(list)
+                for _r in _all_recs:
+                    _cid = _r.get("codcli")
+                    if _cid:
+                        _por_cliente[_cid].append(_r)
+
+                for _cid, _lista in _por_cliente.items():
+                    _melhor = max(_lista, key=lambda x: x.get("score", 0))
+                    _score = _melhor.get("score", 0)
+                    # Define nivel de prioridade baseado no score e nivel_cliente
+                    _nivel = _melhor.get("nivel_cliente", "B")
+                    if _score >= 900 or _nivel == "A":
+                        _prio = "ALTA"
+                    elif _score >= 500 or _nivel == "B":
+                        _prio = "MEDIA"
+                    else:
+                        _prio = "BAIXA"
+
+                    _rec_rows.append({
+                        "codcli": str(_cid),
+                        "segmento": _melhor.get("segmento", "Nao Informado"),
+                        "servico_sugerido": _melhor.get("servico_recomendado", ""),
+                        "servicos_atuais": ", ".join(_melhor.get("servicos_atuais", [])),
+                        "nivel_cliente": _nivel,
+                        "score": _score,
+                        "prioridade_comercial": _prio,
+                    })
+            except Exception as _e:
+                print(f"Erro ao carregar recomendacoes para kanban: {_e}")
             break
-    
-    if df is None or df.empty:
-        df = pd.DataFrame({'codcli': [], 'segmento': [], 'categoria_problema': [], 'qtd_tickets': [], 'servico_sugerido': [], 'prioridade_comercial': []})
-    
+
+    df = pd.DataFrame(_rec_rows) if _rec_rows else pd.DataFrame({
+        'codcli': [], 'segmento': [], 'servico_sugerido': [],
+        'servicos_atuais': [], 'nivel_cliente': [], 'score': [], 'prioridade_comercial': []
+    })
+
     kpi_total = str(len(df))
     kpi_alta = str(len(df[df['prioridade_comercial'] == 'ALTA'])) if 'prioridade_comercial' in df.columns else "0"
-    kpi_tickets = str(df['qtd_tickets'].sum()) if 'qtd_tickets' in df.columns else "0"
+    kpi_tickets = "0"
     kpi_top = str(df['servico_sugerido'].mode()[0]) if not df.empty and 'servico_sugerido' in df.columns else "N/A"
-    
+
     # --- GRAFICOS ---
-    if not df.empty and 'categoria_problema' in df.columns:
-        fig_cat = px.bar(df['categoria_problema'].value_counts().reset_index(), x='categoria_problema', y='count')
+    if not df.empty and 'segmento' in df.columns:
+        fig_cat = px.bar(df['segmento'].value_counts().reset_index(), x='segmento', y='count')
         fig_cat.update_traces(marker_color='#2563eb')
         fig_cat.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='#94a3b8', margin=dict(l=0, r=0, t=10, b=0), height=240)
         html_g1 = pio.to_html(fig_cat, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     else:
         html_g1 = "<p class='text-center text-slate-400'>Dados nao disponiveis</p>"
-    
+
     if not df.empty and 'prioridade_comercial' in df.columns:
         fig_prio = px.pie(df, names='prioridade_comercial', hole=0.7, color='prioridade_comercial', color_discrete_map={'ALTA':'#f43f5e', 'MEDIA':'#3b82f6', 'BAIXA':'#64748b'})
         fig_prio.update_traces(textinfo='none')
@@ -1028,47 +1065,48 @@ def login(username: str = Form(...), password: str = Form(...)):
         html_g2 = pio.to_html(fig_prio, full_html=False, include_plotlyjs='cdn', config={'displayModeBar': False})
     else:
         html_g2 = "<p class='text-center text-slate-400'>Dados nao disponiveis</p>"
-    
+
     # --- KANBAN ---
     for _, row in df.iterrows():
         cid = str(row.get('codcli', ''))
         if cid and cid not in KANBAN_STATE:
             KANBAN_STATE[cid] = "afazer"
-    
+
     table_rows = ""
     kanban_buffers = {"afazer": "", "aguardando": "", "recusado": "", "aceito": ""}
-    
+
     for _, row in df.iterrows():
         cid = str(row.get('codcli', ''))
         segmento = str(row.get('segmento', 'Nao Informado'))
-        categoria = str(row.get('categoria_problema', ''))
         solucao = str(row.get('servico_sugerido', ''))
         prioridade = str(row.get('prioridade_comercial', 'MEDIA'))
-        tickets = str(row.get('qtd_tickets', '0'))
-        
-        servico_atual = str(row.get('servicos_contratados', 'Nenhum'))
-        script_texto = str(row.get('script_vendas', f"Ola, identificamos chamados sobre {categoria} e sugerimos a solucao {solucao}.")).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        
+        nivel = str(row.get('nivel_cliente', ''))
+        score = str(row.get('score', ''))
+        servicos_atuais = str(row.get('servicos_atuais', ''))
+
+        script_texto = f"Cliente #{cid} ({segmento}, Nivel {nivel}): recomendamos oferecer {solucao}. Servicos atuais: {servicos_atuais}."
+        script_texto = script_texto.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
         cor_prio = "text-rose-500" if prioridade == "ALTA" else ("text-blue-500" if prioridade == "MEDIA" else "text-slate-500")
-        
+
         table_rows += f"""
-        <tr data-id="{cid}" data-segmento="{segmento}" data-priority="{prioridade}" data-cat="{categoria}" data-sug="{solucao}" data-servico="{servico_atual}" onclick="loadLeadScript(this)" class="hover:bg-slate-100 dark:hover:bg-slate-900/40 cursor-pointer border-b border-slate-200 dark:border-slate-900/60">
+        <tr data-id="{cid}" data-segmento="{segmento}" data-priority="{prioridade}" data-cat="{segmento}" data-sug="{solucao}" data-servico="{servicos_atuais}" onclick="loadLeadScript(this)" class="hover:bg-slate-100 dark:hover:bg-slate-900/40 cursor-pointer border-b border-slate-200 dark:border-slate-900/60">
             <td class="px-5 py-3 font-semibold">#{cid}</td>
             <td class="px-5 py-3">{segmento}</td>
-            <td class="px-5 py-3 text-amber-600">{servico_atual}</td>
-            <td class="px-5 py-3 text-blue-600">{categoria}</td>
+            <td class="px-5 py-3 text-amber-600">{nivel}</td>
+            <td class="px-5 py-3 text-blue-600">{servicos_atuais[:60]}...</td>
             <td class="px-5 py-3 text-emerald-600">{solucao}</td>
             <td class="px-5 py-3 text-right font-bold {cor_prio}">{prioridade}
                 <div class="hidden hidden-script-source">{script_texto}</div>
             </td>
           </table>
         """
-        
+
         status_atual = KANBAN_STATE.get(cid, "afazer")
         card_html = f"""
         <div data-id="{cid}" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 rounded-xl space-y-1 cursor-grab shadow-sm">
-            <div class="flex justify-between"><span class="text-[11px] font-bold">#{cid}</span><span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-100">{tickets} Tickets</span></div>
-            <p class="text-[11px] truncate">{segmento}</p>
+            <div class="flex justify-between"><span class="text-[11px] font-bold">#{cid}</span><span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-100">Score {score}</span></div>
+            <p class="text-[11px] truncate">{segmento} · Nível {nivel}</p>
             <div class="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded truncate">{solucao}</div>
         </div>
         """
@@ -1196,39 +1234,6 @@ def get_recomendacoes():
                 raise HTTPException(status_code=500, detail=str(e))
     return JSONResponse(content=[])
 
-@app.get("/api/cliente/{codcli}")
-def get_cliente(codcli: int):
-    for _p in [
-        os.path.join("output", "recomendacoes.json"),
-        os.path.join("data", "raw", "recomendacoes.json"),
-        "recomendacoes.json",
-    ]:
-        if os.path.exists(_p):
-            with open(_p, "r", encoding="utf-8", errors="replace") as f:
-                dados = _json.load(f)
-            recs = dados.get("recomendacoes", dados) if isinstance(dados, dict) else dados
-            
-            # Filtra só esse cliente
-            cliente = [r for r in recs if r.get("codcli") == codcli]
-            if not cliente:
-                raise HTTPException(status_code=404, detail="Cliente não encontrado")
-            
-            # Agrupa: pega o melhor serviço e todos os atuais
-            melhor = max(cliente, key=lambda x: x.get("score", 0))
-            return {
-                "codcli": codcli,
-                "segmento": melhor.get("segmento"),
-                "nivel_cliente": melhor.get("nivel_cliente"),
-                "servicos_atuais": melhor.get("servicos_atuais", []),
-                "recomendacao_principal": melhor.get("servico_recomendado"),
-                "score": melhor.get("score"),
-                "outras_recomendacoes": [
-                    {"servico": r["servico_recomendado"], "score": r["score"]}
-                    for r in sorted(cliente, key=lambda x: -x.get("score", 0))[1:5]
-                    if r.get("score", 0) > 0
-                ]
-            }
-    raise HTTPException(status_code=500, detail="Arquivo não encontrado")
 @app.post("/api/kanban/save")
 def save_kanban(data: KanbanUpdate):
     global KANBAN_STATE
@@ -1238,4 +1243,3 @@ def save_kanban(data: KanbanUpdate):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    

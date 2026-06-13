@@ -1146,7 +1146,7 @@ def login(username: str = Form(...), password: str = Form(...)):
         card_html = f"""
         <div data-id="{cid}" class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3 rounded-xl space-y-1 cursor-grab shadow-sm">
             <div class="flex justify-between"><span class="text-[11px] font-bold">#{cid}</span><span class="text-[9px] px-2 py-0.5 rounded-full bg-slate-100">Score {score}</span></div>
-            <p class="text-[11px] truncate">{segmento} &middot; N&#237;vel {nivel}</p>
+            <p class="text-[11px] truncate">{segmento} · Nível {nivel}</p>
             <div class="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-1 rounded truncate">{solucao}</div>
         </div>
         """
@@ -1328,7 +1328,6 @@ def get_recomendacoes(consultor: str = ""):
                 raise HTTPException(status_code=500, detail=str(e))
 
     return JSONResponse(content=[])
-
 
 @app.post("/api/kanban/save")
 def save_kanban(data: KanbanUpdate):

@@ -371,8 +371,8 @@ DASHBOARD_HTML = """
         <main id="tab-content-churn" class="hidden flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
             
             <div class="border-b border-slate-200 dark:border-slate-900 pb-6 mb-6">
-                <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Análise de Risco de Churn</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Score calculado por nível do cliente, portfólio de serviços e oportunidades não aproveitadas.</p>
+                <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-3xl">Análise de Risco por Perfil</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Segmentos classificados por nível de relacionamento e concentração de serviços contratados.</p>
             </div>
 
             <!-- LINHA 1: TOP 5 CARDS (HORIZONTAL) -->
@@ -383,11 +383,29 @@ DASHBOARD_HTML = """
                 </div>
             </div>
 
-            <!-- LINHA 2: GRAFICO STACKED BAR GRANDE -->
-            <div class="bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mb-8">
-                <h3 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Portfolio de Servicos por Segmento</h3>
-                <p class="text-[10px] text-slate-400 dark:text-slate-500 mb-3">Top 10 servicos × 5 segmentos com maior volume de servicos contratados</p>
-                <div id="churn-stacked-chart" style="height: 440px;"></div>
+            <!-- LINHA 2: GRAFICO DISTRIBUIÇÃO NÍVEL A/B/C -->
+            <div class="bg-white dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-xl p-6 mb-8">
+                <h3 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Distribuição de Nível por Segmento</h3>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mb-5">Proporção de clientes A, B e C nos 5 segmentos prioritários</p>
+
+                <!-- Legenda -->
+                <div class="flex gap-6 mb-6 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <div style="width:14px;height:14px;border-radius:3px;background:#22c55e;flex-shrink:0;"></div>
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Nivel A</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div style="width:14px;height:14px;border-radius:3px;background:#f59e0b;flex-shrink:0;"></div>
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Nivel B</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div style="width:14px;height:14px;border-radius:3px;background:#ef4444;flex-shrink:0;"></div>
+                        <span class="text-sm font-semibold text-slate-700 dark:text-slate-200">Nivel C</span>
+                    </div>
+                </div>
+
+                <!-- Barras -->
+                <div id="nivel-dist-bars" class="flex flex-col gap-5"></div>
             </div>
 
         </main>
@@ -771,85 +789,41 @@ DASHBOARD_HTML = """
         }
 
         function renderStackedBarChart() {
-            const isDark = document.documentElement.classList.contains('dark');
-            const gridColor = isDark ? '#1e293b' : '#e2e8f0';
-            const textColor = isDark ? '#94a3b8' : '#64748b';
+            renderNivelDist();
+        }
 
-            // --- 1. Top 5 segmentos com mais servicos (soma de contagens) ---
-            const contagemTotal = {};
-            Object.entries(churnServicosContagemPorSegmento).forEach(([seg, counts]) => {
-                contagemTotal[seg] = Object.values(counts).reduce((a, b) => a + b, 0);
-            });
-            const top5segs = Object.entries(contagemTotal)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 5)
-                .map(e => e[0]);
+        function renderNivelDist() {
+            const container = document.getElementById('nivel-dist-bars');
+            if (!container) return;
 
-            // --- 2. Top 10 servicos globais (soma entre os 5 segmentos) ---
-            const servicoGlobal = {};
-            top5segs.forEach(seg => {
-                const counts = churnServicosContagemPorSegmento[seg] || {};
-                Object.entries(counts).forEach(([srv, cnt]) => {
-                    servicoGlobal[srv] = (servicoGlobal[srv] || 0) + cnt;
-                });
-            });
-            const top10srvs = Object.entries(servicoGlobal)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10)
-                .map(e => e[0]);
+            const top5 = churnSegmentos.slice(0, 5);
+            if (!top5.length) {
+                container.innerHTML = '<p style="color:#94a3b8;font-size:14px;">Dados nao disponiveis</p>';
+                return;
+            }
 
-            // Invertido para que o maior fique no topo (Plotly inverte eixo Y em bar horizontal)
-            const yLabels = [...top10srvs].reverse();
+            container.innerHTML = top5.map(seg => {
+                const total = (seg.nivel_a || 0) + (seg.nivel_b || 0) + (seg.nivel_c || 0);
+                if (total === 0) return '';
+                const pa = Math.round((seg.nivel_a || 0) / total * 100);
+                const pb = Math.round((seg.nivel_b || 0) / total * 100);
+                const pc = 100 - pa - pb;
+                const nome = seg.segmento || '';
+                const isDark = document.documentElement.classList.contains('dark');
+                const labelColor = isDark ? '#cbd5e1' : '#475569';
 
-            // --- 3. Paleta de cores para os 5 segmentos ---
-            const cores = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
+                const segLabel = '<span style="width:130px;text-align:right;font-size:15px;font-weight:600;color:' + labelColor + ';flex-shrink:0;">' + nome + '</span>';
+                const trackA = pa > 0 ? '<div style="width:' + pa + '%;background:#22c55e;display:flex;align-items:center;justify-content:center;"><span style="font-size:14px;font-weight:700;color:#fff;">' + (pa >= 7 ? pa + '%' : '') + '</span></div>' : '';
+                const trackB = pb > 0 ? '<div style="width:' + pb + '%;background:#f59e0b;display:flex;align-items:center;justify-content:center;"><span style="font-size:14px;font-weight:700;color:#fff;">' + (pb >= 7 ? pb + '%' : '') + '</span></div>' : '';
+                const trackC = pc > 0 ? '<div style="width:' + pc + '%;background:#ef4444;display:flex;align-items:center;justify-content:center;"><span style="font-size:14px;font-weight:700;color:#fff;">' + (pc >= 7 ? pc + '%' : '') + '</span></div>' : '';
+                const totalLabel = '<span style="width:60px;font-size:13px;font-weight:600;color:#94a3b8;flex-shrink:0;">' + total + ' cli.</span>';
 
-            // --- 4. Montar traces (uma por segmento) ---
-            const traces = top5segs.map((seg, idx) => {
-                const counts = churnServicosContagemPorSegmento[seg] || {};
-                const xVals = yLabels.map(srv => counts[srv] || 0);
-                const segLabel = seg.length > 22 ? seg.substring(0, 20) + '..' : seg;
-                return {
-                    type: 'bar',
-                    orientation: 'h',
-                    name: segLabel,
-                    x: xVals,
-                    y: yLabels,
-                    marker: { color: cores[idx], opacity: 0.88 },
-                    hovertemplate: '<b>%{y}</b><br>' + seg + ': %{x} clientes<extra></extra>'
-                };
-            });
-
-            const layout = {
-                barmode: 'stack',
-                plot_bgcolor: 'rgba(0,0,0,0)',
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                font: { color: textColor, family: 'Inter', size: 10 },
-                margin: { l: 180, r: 30, t: 10, b: 50 },
-                xaxis: {
-                    showgrid: true,
-                    gridcolor: gridColor,
-                    title: { text: 'Numero de Clientes', font: { size: 10 } },
-                    zeroline: false
-                },
-                yaxis: {
-                    showgrid: false,
-                    automargin: true,
-                    tickfont: { size: 10 }
-                },
-                legend: {
-                    orientation: 'h',
-                    yanchor: 'bottom',
-                    y: -0.22,
-                    xanchor: 'center',
-                    x: 0.5,
-                    font: { size: 9 },
-                    bgcolor: 'rgba(0,0,0,0)'
-                },
-                height: 420
-            };
-
-            Plotly.newPlot('churn-stacked-chart', traces, layout, { displayModeBar: false, responsive: true });
+                return '<div style="display:flex;align-items:center;gap:14px;">'
+                    + segLabel
+                    + '<div style="flex:1;height:42px;border-radius:6px;overflow:hidden;display:flex;">' + trackA + trackB + trackC + '</div>'
+                    + totalLabel
+                    + '</div>';
+            }).join('');
         }
 
         function showChurnFallback() {
@@ -1194,6 +1168,7 @@ def login(username: str = Form(...), password: str = Form(...)):
             clientes_b  = df_uniq[df_uniq[nivel_col] == "B"].groupby("segmento").size()
             
             analise = pd.DataFrame({"total": total_seg, "nivel_c": clientes_c, "nivel_a": clientes_a, "nivel_b": clientes_b}).fillna(0).astype(int)
+            analise = analise[analise['total']>30]
             analise["taxa_churn"] = (analise["nivel_c"] / analise["total"] * 100).round(1)
             analise = analise[analise["total"] > 0]
             

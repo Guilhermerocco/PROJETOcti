@@ -1172,15 +1172,46 @@ def login(username: str = Form(...), password: str = Form(...)):
             analise["taxa_churn"] = (analise["nivel_c"] / analise["total"] * 100).round(1)
             analise = analise[analise["total"] > 0]
             
+            # Mapeamento dos nomes antigos do schurn para os 24 nomes padronizados do recomendacoes.json
+            _mapa_servicos = {
+                'Acesso Dedicado - IP':                   'ACESSO DEDICADO',
+                'Acesso Dedicado - Fisico':               'ACESSO DEDICADO',
+                'Acesso Dedicado Link Comercio':          'ACESSO DEDICADO',
+                'Fortinet sup e atz':                     'FORTINET SUPORTE',
+                'Fortinet Analyzer':                      'FORTINET ANALYZER',
+                'Fortinet FortiSwitch':                   'FORTINET FORTISWITCH',
+                'Fortinet FortiToken':                    'FORTINET FORTITOKEN',
+                'Fortinet ZTNA':                          'FORTINET ZTNA',
+                'E-mail - genérico':                      'EMAIL',
+                'E-mail Contingencia':                    'EMAIL CONTINGENCIA',
+                'Dominio - Hospedagem dominio e Site':    'DOMINIO + HOSPEDAGEM',
+                'Dominio - Guarda (parking)':             'DOMINIO',
+                'Backup':                                 'BACKUP',
+                'AntiVirus':                              'ANTIVIRUS',
+                'AntiSpam SPF+GreyList':                  'ANTISPAM SPF+GREYLIST',
+                'Access Point Wirelles - locação':        'ACCESS POINT WIRELESS',
+                'Colocation - DC Terremark':              'COLOCATION',
+                'Cloud - Serv. Virtual':                  'CLOUD SERVIDOR VIRTUAL',
+                'Trust-Mail':                             'TRUST MAIL',
+                'Sonicwall':                              'SONICWALL SUPORTE',
+                'Suporte Servidor':                       'SUPORTE SERVIDOR',
+                'FTP':                                    'FTP',
+                'SMTP':                                   'SMTP',
+                'Zabbix':                                 'ZABBIX',
+            }
+
             servicos_por_segmento = {}
             servicos_contagem_por_segmento = {}
             servico_rec_por_segmento = {}
-            if 'servico' in df_clientes.columns:    
-                df_srvs = df_clientes.dropna(subset=['segmento'])
+            if 'servico' in df_clientes.columns:
+                df_srvs = df_clientes.dropna(subset=['segmento']).copy()
+                df_srvs['servico'] = df_srvs['servico'].map(
+                    lambda x: _mapa_servicos.get(str(x).strip(), str(x).strip().upper()) if pd.notna(x) else x
+                )
                 for seg in df_srvs['segmento'].unique():
                     vc = df_srvs[df_srvs['segmento'] == seg]['servico'].dropna().value_counts()
                     servicos = vc.head(8).index.tolist()
-                    servicos_por_segmento[str(seg)] = servicos if servicos else ['Acesso Dedicado - Fisico']
+                    servicos_por_segmento[str(seg)] = servicos if servicos else ['ACESSO DEDICADO']
                     servicos_contagem_por_segmento[str(seg)] = {str(k): int(v) for k, v in vc.items()}
             # Top servico recomendado por segmento (via recomendacoes.json)
             for _p in [os.path.join("output","recomendacoes.json"), os.path.join("data","raw","recomendacoes.json"), "recomendacoes.json"]:
